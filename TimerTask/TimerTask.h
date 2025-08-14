@@ -37,7 +37,7 @@ namespace TimerTask {
         using Coroutine = promise_type::Coroutine;
         Coroutine mCoro;
 
-        using Callback = std::function<void(void)>;
+        using Callback = std::function<bool(void)>;
 
         Task(Coroutine h) : mCoro(h) {}
         ~Task() { if (mCoro) mCoro.destroy(); }
@@ -65,10 +65,11 @@ namespace TimerTask {
         bool expired() const { return value().mExpired; }
     };
 
-    Task task(std::chrono::seconds timeOut, Task::Callback functor, bool repeat = true, std::size_t repeatCount = 0) {
+    Task task(std::chrono::milliseconds timeOut, Task::Callback functor, bool repeat = true, std::size_t repeatCount = 0) {
 
         using Clock = std::chrono::steady_clock;
         auto start = Clock::now();
+
         int count = 0;
         bool expired = false;
 
@@ -78,18 +79,16 @@ namespace TimerTask {
 
             if (elapsed >= timeOut) {
                 ++count;
-                functor();
+                expired = !functor();
                 start = Clock::now();
-                if (!repeat || repeat && count >= repeatCount) {
+
+                if (!repeat || repeat && repeatCount != 0 && count >= repeatCount)
                     expired = true;
-                    break;
-                }
             }
+
             co_yield{ count, expired };
 
-        } while (true);
-
-        co_yield{ count, expired };
+        } while (!expired);
     }
 
     class Timers {
@@ -128,17 +127,23 @@ namespace TimerTask {
     public:
 
         Timers() = default;
+        ~Timers() {
+            stop();
+        }
 
+        void add(std::chrono::milliseconds timeOut, Task::Callback functor, bool repeat = true, std::size_t repeatCount = 0) {
+            addGroup(task(timeOut, functor, repeat, repeatCount));
+        }
         template<typename... Args>
-        void add(Args&& ...args) {
+        void addGroup(Args&& ...args) {
 
-            auto pushArg = [&](auto& arg) {
+            auto pushTimer = [&](auto&& arg) {
                 newTasks.push_back(std::move(arg));
                 };
 
             std::scoped_lock lock(newTimersMutex);
 
-            (pushArg(args), ...);
+            (pushTimer(args), ...);
 
             if (!mTimersFuture.valid() || done())
                 mTimersFuture = std::async(std::launch::async, std::bind(&Timers::run, this));
@@ -152,7 +157,7 @@ namespace TimerTask {
 
         void stop() {
             mRunning = false;
-            if (mTimersFuture.valid())
+            if (!done())
                 mTimersFuture.get();
         }
     };
