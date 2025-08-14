@@ -86,7 +86,7 @@ namespace TimerTask {
                     expired = true;
             }
 
-            co_yield{ count, expired };
+            co_yield { count, expired };
 
         } while (!expired);
     }
