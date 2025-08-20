@@ -122,7 +122,7 @@ namespace TimerTask {
             } while (!mTasks.empty() && mRunning);
         }
 
-        std::future<void> mTimersFuture;
+        std::future<void> mTasksFuture;
 
     public:
 
@@ -146,20 +146,20 @@ namespace TimerTask {
             pushTask(task);
             (pushTask(tasks), ...);
 
-            if (!mTimersFuture.valid() || done())
-                mTimersFuture = std::async(std::launch::async, std::bind(&Timers::run, this));
+            if (!mTasksFuture.valid() || done())
+                mTasksFuture = std::async(std::launch::async, std::bind(&Timers::run, this));
         }
 
         Timers& operator=(const Timers& other) = delete;
 
         bool done() {
-            return mTimersFuture.valid() && mTimersFuture.wait_for(0s) == std::future_status::ready;
+            return mTasksFuture.valid() && mTasksFuture.wait_for(0s) == std::future_status::ready;
         }
 
         void stop() {
             mRunning = false;
             if (!done())
-                mTimersFuture.get();
+                mTasksFuture.get();
         }
     };
 }
