@@ -10,7 +10,7 @@ namespace TimerTask {
     using namespace std::chrono_literals;
 
     struct Task {
-
+    
         struct YieldType {
             int mCount = 0;
             bool mExpired = false;
@@ -92,13 +92,13 @@ namespace TimerTask {
     }
 
     class Timers {
-
         std::vector<Task> mTasks, newTasks;
-        std::mutex newTimersMutex;
+        std::mutex newTasksMutex;
         bool mRunning = false;
 
-        void moveNewTimers() {
-            std::scoped_lock lock(newTimersMutex);
+        void moveNewTasks() {
+            std::scoped_lock lock(newTasksMutex);
+            if (newTasks.empty()) return;
             auto moveBegin = std::make_move_iterator(newTasks.begin());
             auto moveEnd = std::make_move_iterator(newTasks.end());
             mTasks.insert(mTasks.end(), moveBegin, moveEnd);
@@ -109,7 +109,7 @@ namespace TimerTask {
             mRunning = true;
             do {
 
-                moveNewTimers();
+                moveNewTasks();
 
                 for (auto& t : mTasks)
                     t.resume();
@@ -132,18 +132,19 @@ namespace TimerTask {
         }
 
         void add(std::chrono::milliseconds timeOut, Task::Callback functor, bool repeat = true, std::size_t repeatCount = 0) {
-            addGroup(task(timeOut, functor, repeat, repeatCount));
+            add(task(timeOut, functor, repeat, repeatCount));
         }
-        template<typename... Args>
-        void addGroup(Args&& ...args) {
+        template<typename... Tasks>
+        void add(Task&& task, Tasks&& ...tasks) {
 
-            auto pushTimer = [&](auto&& arg) {
-                newTasks.push_back(std::move(arg));
+            auto pushTask = [&](auto&& task) {
+                newTasks.push_back(std::move(task));
                 };
 
-            std::scoped_lock lock(newTimersMutex);
+            std::scoped_lock lock(newTasksMutex);
 
-            (pushTimer(args), ...);
+            pushTask(task);
+            (pushTask(tasks), ...);
 
             if (!mTimersFuture.valid() || done())
                 mTimersFuture = std::async(std::launch::async, std::bind(&Timers::run, this));
